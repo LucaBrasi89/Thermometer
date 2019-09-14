@@ -4,7 +4,7 @@
 // Version description:
 
 //      Normally display is not highlighted. When btn pressed - it highlighted.
-//      Shows humidity/temp and uptime during highlighting.
+//      Shows humidity/temp, feels like temp and uptime during highlighting.
 
 //
 // Andrew Sotnikov aka LucaBrasi89
@@ -36,9 +36,9 @@ DHT dht(DHTPIN, DHTTYPE);
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 const int btnPin = 2;   //digital pin button is connected to
 
-int btnState;             // the current reading from the input pin
-int lastButtonState = LOW;   // the previous reading from the input pin
-boolean backlightState = true;   // the previous reading from the input pin
+long lastUpdated = millis(); //initial time in milliseconds
+int updateInterval = 30; //seconds
+
 
 struct Uptime {
   long days;
@@ -60,59 +60,93 @@ struct Uptime getUptime()
   mins = mins - (hours * 60); //subtract the coverted minutes to hours in order to display 59 minutes max
   hours = hours - (days * 24); //subtract the coverted hours to days in order to display 23 hours max
   Uptime uptime = { days, hours, mins };
-  
+
   return uptime;
 };
 
 
-void printTemp() {
+void printTemp(int interval = 100) {
 
-    // Reading temperature or humidity takes about 250 milliseconds!
-    // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
-    float h = dht.readHumidity();
-    // Read temperature as Celsius (the default)
-    float t = dht.readTemperature();
-
-   
-    // Check if any reads failed and exit early (to try again).
-    if (isnan(h) || isnan(t)) {
-      lcd.setCursor(0,0);
-      lcd.println("DHT sensor error!");
-      return;
-    }
-
-    // Compute heat index in Celsius (isFahreheit = false)
-    float hic = dht.computeHeatIndex(t, h, false);
-    lcd.setCursor(0,0);
-    lcd.print("Hum : ");
-    lcd.print(h);
-    lcd.print(" %");
-    lcd.setCursor(0,1);
-    lcd.print("Temp: ");
-    lcd.print(t);
-    lcd.print(" *C");
-  
-}
+  // Reading temperature or humidity takes about 250 milliseconds!
+  // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
+  float h = dht.readHumidity();
+  // Read temperature as Celsius (the default)
+  float t = dht.readTemperature();
 
 
-void printUptime() {
-
-    Uptime uptime = getUptime();
-    lcd.clear();
+  // Check if any reads failed and exit early (to try again).
+  if (isnan(h) || isnan(t)) {
     lcd.setCursor(0, 0);
-    lcd.print("Days: ");
-    lcd.print(uptime.days);
-    lcd.setCursor(0, 1);
-    lcd.print("Hrs: ");
-    lcd.print(uptime.hours);
-    lcd.setCursor(8, 1);
-    lcd.print("Mins: ");
-    lcd.print(uptime.mins);
-    delay(5000);
-    lcd.clear();
+    lcd.println("DHT sensor error!");
+    return;
+  }
+
+  lcd.setCursor(0, 0);
+  lcd.print("Hum : ");
+  lcd.print(h);
+  lcd.print(" %");
+  lcd.setCursor(0, 1);
+  lcd.print("Temp: ");
+  lcd.print(t);
+  lcd.print(" *C");
+  delay(interval);
+  lastUpdated = millis();
+
+}
+
+void printHeatInd(int interval = 2000) {
+
+  // Compute heat index in Celsius (isFahreheit = false)
+  float hic = dht.computeHeatIndex(dht.readTemperature(),
+                                   dht.readHumidity(), false);
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Now feels like - ");
+  lcd.setCursor(0, 1);
+  lcd.print(hic);
+  lcd.print("");
+  lcd.print(" *C");
+  delay(interval);
+
+}
+
+void printUptime(int interval = 2000) {
+
+  Uptime uptime = getUptime();
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Days: ");
+  lcd.print(uptime.days);
+  lcd.setCursor(0, 1);
+  lcd.print("Hrs: ");
+  lcd.print(uptime.hours);
+  lcd.setCursor(8, 1);
+  lcd.print("Mins: ");
+  lcd.print(uptime.mins);
+  delay(interval);
+  lcd.clear();
 }
 
 
+
+//Checking btn state
+// if the button state has changed:
+void checkBtn() {
+
+  int reading = digitalRead(btnPin);
+  if (reading == LOW) {
+    //btnState = reading;
+    lcd.setBacklight(true);
+    printTemp(5000);
+    printHeatInd(5000);
+    printUptime(5000);
+    lcd.setBacklight(false);
+    digitalWrite(btnPin, HIGH);
+
+  }
+
+}
 
 void setup() {
   Serial.begin(9600);
@@ -123,28 +157,20 @@ void setup() {
   // initialize the LCD
   lcd.begin();
 
-  // Turn on the blacklight and print a message.
+  // Turn off the blacklight and print a message.
   lcd.backlight();
+  lcd.setBacklight(false);
   pinMode(2, INPUT_PULLUP);
+
+  printTemp();
 }
 
 void loop() {
-  // Wait a few seconds between measurements.
-  delay(2000);
 
-  printTemp(); // just get humidity and temp data  
-
-  //Checking btn state
-  // if the button state has changed:
-  int reading = digitalRead(btnPin);
-  if (reading != btnState) {
-
-    btnState = reading;
-    backlightState = !backlightState;
-    lcd.setBacklight(backlightState);
-    delay(5000);
-    printUptime();
-    
+  int secondsPassed = (millis() - lastUpdated) / 1000;
+  if ( secondsPassed >= updateInterval ) {
+    printTemp();
   }
+  checkBtn();
 
 }
